@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brownian Snowflake</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: transparent;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    canvas {
+      margin: 0;
+      display: block;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+</head>
+<body>
+  <script>
+    // Coding Challenge 127 Brownian Tree Snowflake
+    // Daniel Shiffman
+    // Rewritten with modifications from the Processing version by BoltMan
+
+    let current;
+    let tree;
+    let completed = false;
+    let radius;
+    let ratio;
+
+    // ---- (Params) ---- //
+    let animate = true; // Not used
+    let animateIters = 25; // Animation Speed
+    let particleSize = 3; // Size Used for the particles
+    let particleMove = 2; // Distance the particles move each cycle;
+    let particleLength = 5;
+    let particleWidth = 2;
+    let fixedAngle = false; // Try fixedAngle = true; it's pretty cool
+    let sym = 6; // How many sides should your snowflake have?
+    let bias = 0.15; // How pointy do you wany your snowflake?
+    const muted = [44, 78, 90];
+    // ---- (Params) ---- //
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      background(0, 0);
+      colorMode(RGB);
+      radius = min(width, height) * 0.47;
+      ratio = tan(PI / sym);
+      if (animate) {
+        resetSnowflake();
+      }
+      window.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "reset-snowflake") {
+          resetSnowflake();
+        }
+      });
+    }
+
+    function resetSnowflake() {
+      completed = false;
+      clear();
+      let rectangle = new Rectangle(width / 2, height / 2, width / 2, height / 2);
+      tree = new BinTree(rectangle, null);
+      current = newParticle();
+    }
+
+    function newParticle() {
+      return new Particle(p5.Vector.fromAngle(random(PI / (sym * (1 - bias)))).setMag(radius));
+    }
+
+    function mouseClicked() {
+      resetSnowflake();
+    }
+
+    function draw() {
+      translate(width / 2, height / 2);
+      rotate(PI / sym);
+
+      if (!completed) {
+        for (let i = 0; i < animateIters; i++) {
+          current = newParticle();
+          let count = 0;
+          while (
+            !current.finished() &&
+            !current.intersects(
+              tree.query(
+                new Rectangle(current.pos.x, current.pos.y, current.radius * 3, current.radius * 3)
+              )
+            )
+          ) {
+            current.update();
+            count++;
+            if (count > 500) {
+              break;
+            }
+          }
+          if (count == 0) {
+            completed = true;
+          }
+          for (let rot = 0; rot < sym; rot++) {
+            rotate(PI / (sym / 2));
+            current.draw();
+            push();
+            scale(1, -1);
+            current.draw();
+            pop();
+          }
+          tree.insert(new Leaf(current.pos, current));
+        }
+      }
+    }
+
+    class Particle {
+      constructor(pos) {
+        this.pos = pos;
+        this.vel = createVector(0, 0);
+        this.angle = floor(random(sym)) * (TWO_PI / sym);
+        this.length = particleLength;
+        this.radius = particleSize / 2;
+      }
+
+      update() {
+        this.vel.sub(this.pos);
+        this.vel.setMag(particleMove);
+        this.vel.add(p5.Vector.random2D());
+        this.vel.setMag(particleMove);
+        this.pos.add(this.vel);
+        this.vel = createVector(0, 0);
+        this.pos = p5.Vector.fromAngle(constrain(this.pos.heading(), 0, PI / sym)).setMag(
+          this.pos.mag()
+        );
+      }
+
+      draw() {
+        push();
+        translate(this.pos.x, this.pos.y);
+        if (fixedAngle) {
+          rotate((TWO_PI / sym) * 2);
+        } else {
+          rotate(this.angle);
+        }
+        colorMode(RGB);
+        stroke(muted[0], muted[1], muted[2], 160);
+        strokeWeight(particleWidth);
+        drawingContext.shadowBlur = 16;
+        drawingContext.shadowColor = "rgba(44,78,90,0.35)";
+        line(0, -this.length, 0, this.length);
+        pop();
+      }
+
+      intersects(others) {
+        for (let o of others) {
+          if (this.pos.dist(o.pos) < this.radius + o.radius) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      finished() {
+        return this.pos.x < 1;
+      }
+    }
+
+    class Leaf {
+      constructor(pos, particle) {
+        this.pos = pos.copy();
+        this.radius = particle.radius;
+      }
+    }
+
+    class Rectangle {
+      constructor(x, y, w, h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+      }
+
+      contains(point) {
+        return (
+          point.pos.x >= this.x - this.w &&
+          point.pos.x <= this.x + this.w &&
+          point.pos.y >= this.y - this.h &&
+          point.pos.y <= this.y + this.h
+        );
+      }
+
+      intersects(range) {
+        return !(
+          range.x - range.w > this.x + this.w ||
+          range.x + range.w < this.x - this.w ||
+          range.y - range.h > this.y + this.h ||
+          range.y + range.h < this.y - this.h
+        );
+      }
+    }
+
+    class BinTree {
+      constructor(boundary, capacity) {
+        this.boundary = boundary;
+        this.capacity = capacity || 4;
+        this.points = [];
+        this.divided = false;
+      }
+
+      subdivide() {
+        let x = this.boundary.x;
+        let y = this.boundary.y;
+        let w = this.boundary.w;
+        let h = this.boundary.h;
+
+        let ne = new Rectangle(x + w / 2, y - h / 2, w / 2, h / 2);
+        this.northeast = new BinTree(ne, this.capacity);
+        let nw = new Rectangle(x - w / 2, y - h / 2, w / 2, h / 2);
+        this.northwest = new BinTree(nw, this.capacity);
+        let se = new Rectangle(x + w / 2, y + h / 2, w / 2, h / 2);
+        this.southeast = new BinTree(se, this.capacity);
+        let sw = new Rectangle(x - w / 2, y + h / 2, w / 2, h / 2);
+        this.southwest = new BinTree(sw, this.capacity);
+
+        this.divided = true;
+      }
+
+      insert(point) {
+        if (!this.boundary.contains(point)) {
+          return false;
+        }
+
+        if (this.points.length < this.capacity) {
+          this.points.push(point);
+          return true;
+        }
+
+        if (!this.divided) {
+          this.subdivide();
+        }
+
+        if (this.northeast.insert(point)) {
+          return true;
+        } else if (this.northwest.insert(point)) {
+          return true;
+        } else if (this.southeast.insert(point)) {
+          return true;
+        } else if (this.southwest.insert(point)) {
+          return true;
+        }
+      }
+
+      query(range, found) {
+        if (!found) {
+          found = [];
+        }
+        if (!this.boundary.intersects(range)) {
+          return found;
+        } else {
+          for (let p of this.points) {
+            if (range.contains(p)) {
+              found.push(p);
+            }
+          }
+          if (this.divided) {
+            this.northwest.query(range, found);
+            this.northeast.query(range, found);
+            this.southwest.query(range, found);
+            this.southeast.query(range, found);
+          }
+        }
+        return found;
+      }
+    }
+  </script>
+</body>
+</html>
